@@ -18,7 +18,7 @@ pending_users = {}
 signal_usage = {}
 stats = {"total_signals": 0, "users": set()}
 
-# 🎛 Клавиатуры (админ — русский, лиды — English/Hindi)
+# 🌍 Клавиатуры
 lang_kb = ReplyKeyboardMarkup(keyboard=[
     [KeyboardButton(text="English"), KeyboardButton(text="हिंदी")]
 ], resize_keyboard=True)
@@ -92,13 +92,13 @@ async def approve_user(callback: CallbackQuery):
     approved_users.add(uid)
     stats["users"].add(uid)
     await bot.send_message(uid, "✅ You’ve been approved!\nPlease choose your language:", reply_markup=lang_kb)
-    await callback.message.edit_text("✅ Access granted.")
+    await callback.message.edit_text("✅ Доступ предоставлен.")
 
 @dp.callback_query(F.data.startswith("deny:"))
 async def deny_user(callback: CallbackQuery):
     uid = int(callback.data.split(":")[1])
     await bot.send_message(uid, "❌ Access denied.")
-    await callback.message.edit_text("❌ Access denied.")
+    await callback.message.edit_text("❌ Доступ отклонён.")
 
 @dp.message(F.text.in_({"English", "हिंदी"}))
 async def lang_chosen(msg: Message):
@@ -126,33 +126,33 @@ async def get_signal(msg: Message):
     await msg.answer(f"📶 Your signal: <b>{generate_signal()}</b>")
 @dp.message(F.text == "📊 Статистика", F.from_user.id.in_(ADMIN_IDS))
 async def stats_panel(msg: Message):
-    await msg.answer(f"📈 Approved leads: {len(approved_users)}\n📶 Total signals sent: {stats['total_signals']}")
+    await msg.answer(f"📈 Лидов одобрено: {len(approved_users)}\n📶 Выдано сигналов: {stats['total_signals']}")
 
 @dp.message(F.text == "✅ Активные лиды", F.from_user.id.in_(ADMIN_IDS))
 async def active_panel(msg: Message):
     txt = [f"{uid}" for uid in approved_users]
-    await msg.answer("\n".join(txt) if txt else "No active leads found.")
+    await msg.answer("\n".join(txt) if txt else "Нет активных лидов.")
 
 @dp.message(F.text == "⏳ Заявки на доступ", F.from_user.id.in_(ADMIN_IDS))
 async def pending_panel(msg: Message):
     txt = [f"{uid} @{info['username']}" for uid, info in pending_users.items()]
-    await msg.answer("\n".join(txt) if txt else "No pending access requests.")
+    await msg.answer("\n".join(txt) if txt else "Нет заявок на доступ.")
 
 @dp.message(F.text == "➕ Добавить лид", F.from_user.id.in_(ADMIN_IDS))
 async def ask_add(msg: Message):
-    await msg.answer("📩 Send the user ID to grant access to lead:")
+    await msg.answer("📩 Отправьте ID пользователя, которому выдать доступ.")
 
 @dp.message(F.text == "🚫 Удалить лид", F.from_user.id.in_(ADMIN_IDS))
 async def ask_remove(msg: Message):
-    await msg.answer("🗑 Send the user ID to revoke access from lead:")
+    await msg.answer("🗑 Отправьте ID пользователя, у которого отобрать доступ.")
 
 @dp.message(F.text == "🆕 Добавить админа", F.from_user.id.in_(ADMIN_IDS))
 async def ask_add_admin(msg: Message):
-    await msg.answer("📩 Send the user ID to grant admin privileges:")
+    await msg.answer("📩 Отправьте ID пользователя, которому выдать админку.")
 
 @dp.message(F.text == "🗑️ Отобрать админку", F.from_user.id.in_(ADMIN_IDS))
 async def ask_remove_admin(msg: Message):
-    await msg.answer("🗑 Send the admin ID to revoke admin rights:")
+    await msg.answer("🗑 Отправьте ID администратора, у которого нужно отобрать админку.")
 
 @dp.message(F.from_user.id.in_(ADMIN_IDS))
 async def process_ids(msg: Message):
@@ -161,25 +161,25 @@ async def process_ids(msg: Message):
         reply = msg.reply_to_message
         if reply:
             text = reply.text.lower()
-            if "grant access to lead" in text:
+            if "выдать доступ" in text:
                 approved_users.add(uid)
                 stats["users"].add(uid)
-                await msg.answer(f"✅ Access granted to lead: <code>{uid}</code>")
-            elif "revoke access from lead" in text:
+                await msg.answer(f"✅ Доступ выдан лиду: <code>{uid}</code>")
+            elif "отобрать доступ" in text:
                 approved_users.discard(uid)
-                await msg.answer(f"🚫 Access revoked from lead: <code>{uid}</code>")
-            elif "grant admin privileges" in text:
+                await msg.answer(f"🚫 Доступ отобран у лида: <code>{uid}</code>")
+            elif "выдать админку" in text:
                 ADMIN_IDS.add(uid)
-                await msg.answer(f"✅ Admin privileges granted: <code>{uid}</code>")
-            elif "revoke admin rights" in text:
+                await msg.answer(f"✅ Админ добавлен: <code>{uid}</code>")
+            elif "отобрать админку" in text:
                 if uid == MAIN_ADMIN_ID:
-                    await msg.answer("⚠ Cannot remove main admin!")
+                    await msg.answer("⚠ Нельзя удалить главного админа!")
                 elif uid in ADMIN_IDS:
                     ADMIN_IDS.discard(uid)
-                    await msg.answer(f"🗑 Admin rights revoked: <code>{uid}</code>")
+                    await msg.answer(f"🗑 Админ удалён: <code>{uid}</code>")
                 else:
-                    await msg.answer(f"❌ <code>{uid}</code> is not currently an admin.")
+                    await msg.answer(f"❌ <code>{uid}</code> не является админом.")
 
-# 🚀 Run bot
+# 🚀 Запуск бота
 if __name__ == "__main__":
     dp.run_polling(bot)
