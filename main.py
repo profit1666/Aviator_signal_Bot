@@ -1,4 +1,4 @@
-import random, time, aiohttp, logging
+import random, time, aiohttp, logging, asyncio
 from aiogram import Bot, Dispatcher, F
 from aiogram.enums import ParseMode
 from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
@@ -38,12 +38,14 @@ admin_kb = ReplyKeyboardMarkup(
     resize_keyboard=True
 )
 
+# 🌍 Геолокация
 async def get_country():
     async with aiohttp.ClientSession() as session:
         async with session.get("http://ip-api.com/json/?fields=country") as response:
             data = await response.json()
             return data.get("country", "Unknown")
 
+# 📶 Генерация сигнала
 def generate_signal():
     r = random.random()
     if r < 0.70:
@@ -57,6 +59,7 @@ def generate_signal():
     else:
         return round(random.uniform(1200.1, 20000.1), 2)
 
+# 🧠 Лимит по времени
 def check_limit(uid):
     now = datetime.now(timezone.utc)
     usage = signal_usage.get(uid, [])
@@ -187,3 +190,13 @@ async def process_ids(msg: Message):
                     await msg.answer(f"🗑 Админ удалён: <code>{uid}</code>")
                 else:
                     await msg.answer(f"❌ <code>{uid}</code> не является админом.")
+async def start_all():
+    bot_task = asyncio.create_task(dp.start_polling(bot))
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, port=8080)
+    await site.start()
+    await bot_task
+
+if __name__ == "__main__":
+    asyncio.run(start_all())
