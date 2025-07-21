@@ -6,7 +6,7 @@ from aiogram.filters import CommandStart
 from aiogram.client.default import DefaultBotProperties
 from datetime import datetime, timedelta
 
-TOKEN = "7966917258:AAHB3D1Z8-PwXGiSW6gQe-bPIlnlAjNZdsI"
+TOKEN = "7966917258:AAFlanH_miiwxkKjRHjSHms7R7RMrS9asHc"
 MAIN_ADMIN_ID = 1463957271
 ADMIN_IDS = {MAIN_ADMIN_ID}
 
