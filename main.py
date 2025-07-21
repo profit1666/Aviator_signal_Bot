@@ -4,7 +4,8 @@ from aiogram.enums import ParseMode
 from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
 from aiogram.filters import CommandStart
 from aiogram.client.default import DefaultBotProperties
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
+from aiohttp import web
 
 TOKEN = "7966917258:AAFlanH_miiwxkKjRHjSHms7R7RMrS9asHc"
 MAIN_ADMIN_ID = 1463957271
@@ -57,11 +58,18 @@ def generate_signal():
         return round(random.uniform(1200.1, 20000.1), 2)
 
 def check_limit(uid):
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     usage = signal_usage.get(uid, [])
     usage = [t for t in usage if now - t < timedelta(hours=1)]
     signal_usage[uid] = usage
     return len(usage) < 10
+
+# 🌐 Web-ручка для Render
+async def ping(request):
+    return web.Response(text="OK")
+
+app = web.Application()
+app.add_routes([web.get("/", ping)])
 @dp.message(CommandStart())
 async def cmd_start(msg: Message):
     uid = msg.from_user.id
@@ -117,7 +125,7 @@ async def get_signal(msg: Message):
     if not check_limit(uid):
         await msg.answer("⚠ You’ve reached your signal limit. Try again in 1 hour.")
         return
-    signal_usage.setdefault(uid, []).append(datetime.utcnow())
+    signal_usage.setdefault(uid, []).append(datetime.now(timezone.utc))
     stats["total_signals"] += 1
     await msg.answer("⌛ Analyzing previous rounds...")
     time.sleep(1)
@@ -179,7 +187,3 @@ async def process_ids(msg: Message):
                     await msg.answer(f"🗑 Админ удалён: <code>{uid}</code>")
                 else:
                     await msg.answer(f"❌ <code>{uid}</code> не является админом.")
-
-# 🚀 Запуск бота
-if __name__ == "__main__":
-    dp.run_polling(bot)
