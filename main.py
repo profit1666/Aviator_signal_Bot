@@ -1,7 +1,7 @@
 import random, time, aiohttp, logging, asyncio
 from aiogram import Bot, Dispatcher, F
 from aiogram.enums import ParseMode
-from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
+from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery, Update
 from aiogram.filters import CommandStart
 from aiogram.client.default import DefaultBotProperties
 from datetime import datetime, timedelta, timezone
@@ -44,7 +44,6 @@ async def get_country():
         async with session.get("http://ip-api.com/json/?fields=country") as response:
             data = await response.json()
             return data.get("country", "Unknown")
-
 # 📶 Генерация сигнала
 def generate_signal():
     r = random.random()
@@ -67,12 +66,7 @@ def check_limit(uid):
     signal_usage[uid] = usage
     return len(usage) < 10
 
-# 🌐 Web-ручка для Render
-async def ping(request):
-    return web.Response(text="OK")
-
-app = web.Application()
-app.add_routes([web.get("/", ping)])
+# 💬 Хендлеры
 @dp.message(CommandStart())
 async def cmd_start(msg: Message):
     uid = msg.from_user.id
@@ -190,13 +184,21 @@ async def process_ids(msg: Message):
                     await msg.answer(f"🗑 Админ удалён: <code>{uid}</code>")
                 else:
                     await msg.answer(f"❌ <code>{uid}</code> не является админом.")
-async def start_all():
-    bot_task = asyncio.create_task(dp.start_polling(bot))
-    runner = web.AppRunner(app)
-    await runner.setup()
-    site = web.TCPSite(runner, port=8080)
-    await site.start()
-    await bot_task
+
+# 🌐 Webhook-сервер для Telegram
+async def telegram_webhook(request):
+    data = await request.json()
+    update = Update.to_object(data)
+    await dp.feed_update(bot, update)
+    return web.Response()
+
+async def on_startup(app):
+    webhook_url = "https://aviator-signal-bot-5eqk.onrender.com"
+    await bot.delete_webhook()
+    await bot.set_webhook(webhook_url)
+
+app.router.add_post("/", telegram_webhook)
+app.on_startup.append(on_startup)
 
 if __name__ == "__main__":
-    asyncio.run(start_all())
+    web.run_app(app, port=8080)
