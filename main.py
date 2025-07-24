@@ -3,9 +3,9 @@ from aiogram import Bot, Dispatcher, F
 from aiogram.enums import ParseMode
 from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery, Update
 from aiogram.filters import CommandStart
+from aiogram.client.default import DefaultBotProperties
 from aiohttp import web
 from datetime import datetime, timedelta, timezone
-from aiogram.client.default import DefaultBotProperties
 
 TOKEN = os.getenv("BOT_TOKEN")
 MAIN_ADMIN_ID = 1463957271
@@ -130,7 +130,7 @@ async def ping(request):
 
 async def telegram_webhook(request):
     data = await request.json()
-    update = Update.to_object(data)
+    update = Update.model_validate(data)  # ✅ исправлено: больше не to_object
     await dp.feed_update(bot, update)
     return web.Response()
 
