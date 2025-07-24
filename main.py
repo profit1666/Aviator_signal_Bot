@@ -5,12 +5,12 @@ from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton, InlineKe
 from aiogram.filters import CommandStart
 from aiohttp import web
 from datetime import datetime, timedelta, timezone
+from aiogram.client.default import DefaultBotProperties
 
-# ⛔ Токен берётся из окружения (Render → Environment)
 TOKEN = os.getenv("BOT_TOKEN")
 MAIN_ADMIN_ID = 1463957271
 
-bot = Bot(TOKEN, parse_mode=ParseMode.HTML)
+bot = Bot(TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
 dp = Dispatcher()
 logging.basicConfig(level=logging.INFO)
 
@@ -18,7 +18,6 @@ approved_users = set()
 pending_users = {}
 signal_usage = {}
 
-# 🌍 Клавиатура для пользователей (только English и Hindi)
 user_lang_kb = ReplyKeyboardMarkup(keyboard=[
     [KeyboardButton(text="English"), KeyboardButton(text="हिंदी")]
 ], resize_keyboard=True)
@@ -27,7 +26,6 @@ signal_kb = ReplyKeyboardMarkup(keyboard=[
     [KeyboardButton(text="📶 Get Signal")]
 ], resize_keyboard=True)
 
-# 📋 Inline для запроса одобрения (только для администратора)
 def approval_buttons(uid):
     return InlineKeyboardMarkup(inline_keyboard=[
         [
@@ -35,7 +33,7 @@ def approval_buttons(uid):
             InlineKeyboardButton(text="❌ Отклонить", callback_data=f"deny:{uid}")
         ]
     ])
-# 🧠 Лимит по времени — не более 10 сигналов в час
+
 def check_limit(uid):
     now = datetime.now(timezone.utc)
     usage = signal_usage.get(uid, [])
@@ -43,7 +41,6 @@ def check_limit(uid):
     signal_usage[uid] = usage
     return len(usage) < 10
 
-# 📶 Генератор сигнала
 def generate_signal():
     r = random.random()
     if r < 0.70:
@@ -57,7 +54,6 @@ def generate_signal():
     else:
         return round(random.uniform(1200.1, 20000.1), 2)
 
-# 🚪 Старт команды
 @dp.message(CommandStart())
 async def start_handler(msg: Message):
     uid = msg.from_user.id
@@ -84,7 +80,6 @@ async def start_handler(msg: Message):
         reply_markup=approval_buttons(uid)
     )
 
-# ✅ Одобрение заявки
 @dp.callback_query(F.data.startswith("approve:"))
 async def approve_handler(callback: CallbackQuery):
     uid = int(callback.data.split(":")[1])
@@ -92,14 +87,12 @@ async def approve_handler(callback: CallbackQuery):
     await bot.send_message(uid, "✅ You’ve been approved!\nChoose your language:", reply_markup=user_lang_kb)
     await callback.message.edit_text("✅ Доступ одобрен.")
 
-# ❌ Отклонение заявки
 @dp.callback_query(F.data.startswith("deny:"))
 async def deny_handler(callback: CallbackQuery):
     uid = int(callback.data.split(":")[1])
     await bot.send_message(uid, "❌ Access denied.")
     await callback.message.edit_text("❌ Доступ отклонён.")
 
-# 🌍 Выбор языка
 @dp.message(F.text.in_({"English", "हिंदी"}))
 async def language_handler(msg: Message):
     if msg.from_user.id not in approved_users:
@@ -107,7 +100,6 @@ async def language_handler(msg: Message):
         return
     await msg.answer("🔔 You can receive up to 10 signals per hour.", reply_markup=signal_kb)
 
-# 📶 Получить сигнал
 @dp.message(F.text == "📶 Get Signal")
 async def signal_handler(msg: Message):
     uid = msg.from_user.id
@@ -121,11 +113,7 @@ async def signal_handler(msg: Message):
     await msg.answer("📡 Signal incoming...")
     time.sleep(1)
     await msg.answer(f"📶 Your signal: <b>{generate_signal()}</b>")
-# 🌐 Проверочный ручной ping (можно использовать в UptimeRobot)
-async def ping(request):
-    return web.Response(text="OK")
 
-# 📥 Команда для просмотра заявок (только главный админ)
 @dp.message(F.text == "📥 Заявки на доступ", F.from_user.id == MAIN_ADMIN_ID)
 async def view_requests(msg: Message):
     if not pending_users:
@@ -137,20 +125,20 @@ async def view_requests(msg: Message):
     ]
     await msg.answer("\n".join(txt))
 
-# 🌐 Webhook для Telegram
+async def ping(request):
+    return web.Response(text="OK")
+
 async def telegram_webhook(request):
     data = await request.json()
     update = Update.to_object(data)
     await dp.feed_update(bot, update)
     return web.Response()
 
-# 🚀 Запуск на Render
 async def on_startup(app):
     webhook_url = "https://aviator-signal-bot-5eqk.onrender.com"
     await bot.delete_webhook()
     await bot.set_webhook(webhook_url)
 
-# 🏁 Запуск aiohttp-приложения
 app = web.Application()
 app.router.add_get("/", ping)
 app.router.add_post("/", telegram_webhook)
