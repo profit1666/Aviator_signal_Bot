@@ -1,26 +1,25 @@
-import random, time, aiohttp, logging, asyncio
+import os, random, time, aiohttp, logging
 from aiogram import Bot, Dispatcher, F
 from aiogram.enums import ParseMode
 from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery, Update
 from aiogram.filters import CommandStart
-from aiogram.client.default import DefaultBotProperties
-from datetime import datetime, timedelta, timezone
 from aiohttp import web
+from datetime import datetime, timedelta, timezone
 
-TOKEN = "7966917258:AAFlanH_miiwxkKjRHjSHms7R7RMrS9asHc"
+# ⛔ Токен берётся из окружения (Render → Environment)
+TOKEN = os.getenv("BOT_TOKEN")
 MAIN_ADMIN_ID = 1463957271
-ADMIN_IDS = {MAIN_ADMIN_ID}
 
-bot = Bot(TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
+bot = Bot(TOKEN, parse_mode=ParseMode.HTML)
 dp = Dispatcher()
 logging.basicConfig(level=logging.INFO)
+
 approved_users = set()
 pending_users = {}
 signal_usage = {}
-stats = {"total_signals": 0, "users": set()}
 
-# 🌍 Клавиатуры
-lang_kb = ReplyKeyboardMarkup(keyboard=[
+# 🌍 Клавиатура для пользователей (только English и Hindi)
+user_lang_kb = ReplyKeyboardMarkup(keyboard=[
     [KeyboardButton(text="English"), KeyboardButton(text="हिंदी")]
 ], resize_keyboard=True)
 
@@ -28,23 +27,23 @@ signal_kb = ReplyKeyboardMarkup(keyboard=[
     [KeyboardButton(text="📶 Get Signal")]
 ], resize_keyboard=True)
 
-admin_kb = ReplyKeyboardMarkup(
-    keyboard=[
-        [KeyboardButton(text="📊 Статистика"), KeyboardButton(text="✅ Активные лиды")],
-        [KeyboardButton(text="⏳ Заявки на доступ")],
-        [KeyboardButton(text="➕ Добавить лид"), KeyboardButton(text="🚫 Удалить лид")],
-        [KeyboardButton(text="🆕 Добавить админа"), KeyboardButton(text="🗑️ Отобрать админку")]
-    ],
-    resize_keyboard=True
-)
+# 📋 Inline для запроса одобрения (только для администратора)
+def approval_buttons(uid):
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(text="✅ Одобрить", callback_data=f"approve:{uid}"),
+            InlineKeyboardButton(text="❌ Отклонить", callback_data=f"deny:{uid}")
+        ]
+    ])
+# 🧠 Лимит по времени — не более 10 сигналов в час
+def check_limit(uid):
+    now = datetime.now(timezone.utc)
+    usage = signal_usage.get(uid, [])
+    usage = [t for t in usage if now - t < timedelta(hours=1)]
+    signal_usage[uid] = usage
+    return len(usage) < 10
 
-# 🌍 Геолокация
-async def get_country():
-    async with aiohttp.ClientSession() as session:
-        async with session.get("http://ip-api.com/json/?fields=country") as response:
-            data = await response.json()
-            return data.get("country", "Unknown")
-# 📶 Генерация сигнала
+# 📶 Генератор сигнала
 def generate_signal():
     r = random.random()
     if r < 0.70:
@@ -58,145 +57,102 @@ def generate_signal():
     else:
         return round(random.uniform(1200.1, 20000.1), 2)
 
-# 🧠 Лимит по времени
-def check_limit(uid):
-    now = datetime.now(timezone.utc)
-    usage = signal_usage.get(uid, [])
-    usage = [t for t in usage if now - t < timedelta(hours=1)]
-    signal_usage[uid] = usage
-    return len(usage) < 10
-
-# 💬 Хендлеры
+# 🚪 Старт команды
 @dp.message(CommandStart())
-async def cmd_start(msg: Message):
+async def start_handler(msg: Message):
     uid = msg.from_user.id
-    uname = msg.from_user.username or "None"
-    fname = msg.from_user.first_name or ""
-    if uid in ADMIN_IDS:
-        await msg.answer("🔧 Админ-панель загружена", reply_markup=admin_kb)
+    uname = msg.from_user.username or "—"
+    fname = msg.from_user.first_name or "—"
+
+    if uid == MAIN_ADMIN_ID:
+        await msg.answer("🔧 Админ-панель загружена.", reply_markup=ReplyKeyboardMarkup(
+            keyboard=[[KeyboardButton(text="📥 Заявки на доступ")]],
+            resize_keyboard=True
+        ))
         return
+
     if uid in approved_users:
-        await msg.answer("🌐 Choose your language:", reply_markup=lang_kb)
+        await msg.answer("🌐 Choose your language:", reply_markup=user_lang_kb)
         return
-    country = await get_country()
+
     pending_users[uid] = {"username": uname, "name": fname}
-    kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="✅ Approve", callback_data=f"approve:{uid}"),
-         InlineKeyboardButton(text="❌ Deny", callback_data=f"deny:{uid}")]
-    ])
-    await bot.send_message(
-        MAIN_ADMIN_ID,
-        f"📥 New access request:\n👤 <b>{fname}</b> (@{uname})\n🆔 <code>{uid}</code>\n🌍 Country: {country}",
-        reply_markup=kb
-    )
     await msg.answer("⏳ Waiting for admin approval...")
 
+    await bot.send_message(
+        MAIN_ADMIN_ID,
+        f"📥 Заявка на доступ:\n👤 <b>{fname}</b> (@{uname})\n🆔 <code>{uid}</code>",
+        reply_markup=approval_buttons(uid)
+    )
+
+# ✅ Одобрение заявки
 @dp.callback_query(F.data.startswith("approve:"))
-async def approve_user(callback: CallbackQuery):
+async def approve_handler(callback: CallbackQuery):
     uid = int(callback.data.split(":")[1])
     approved_users.add(uid)
-    stats["users"].add(uid)
-    await bot.send_message(uid, "✅ You’ve been approved!\nPlease choose your language:", reply_markup=lang_kb)
-    await callback.message.edit_text("✅ Доступ предоставлен.")
+    await bot.send_message(uid, "✅ You’ve been approved!\nChoose your language:", reply_markup=user_lang_kb)
+    await callback.message.edit_text("✅ Доступ одобрен.")
 
+# ❌ Отклонение заявки
 @dp.callback_query(F.data.startswith("deny:"))
-async def deny_user(callback: CallbackQuery):
+async def deny_handler(callback: CallbackQuery):
     uid = int(callback.data.split(":")[1])
     await bot.send_message(uid, "❌ Access denied.")
     await callback.message.edit_text("❌ Доступ отклонён.")
 
+# 🌍 Выбор языка
 @dp.message(F.text.in_({"English", "हिंदी"}))
-async def lang_chosen(msg: Message):
-    uid = msg.from_user.id
-    if uid not in approved_users:
-        await msg.answer("❌ You’re not authorized to use signals.")
+async def language_handler(msg: Message):
+    if msg.from_user.id not in approved_users:
+        await msg.answer("❌ You’re not authorized to use this bot.")
         return
-    await msg.answer("🔔 You have a limit of 10 signals per hour.", reply_markup=signal_kb)
+    await msg.answer("🔔 You can receive up to 10 signals per hour.", reply_markup=signal_kb)
 
+# 📶 Получить сигнал
 @dp.message(F.text == "📶 Get Signal")
-async def get_signal(msg: Message):
+async def signal_handler(msg: Message):
     uid = msg.from_user.id
     if uid not in approved_users:
-        await msg.answer("❌ Access denied. Please wait for admin approval.")
+        await msg.answer("❌ You’re not authorized yet.")
         return
     if not check_limit(uid):
-        await msg.answer("⚠ You’ve reached your signal limit. Try again in 1 hour.")
+        await msg.answer("⚠ Signal limit reached. Try again in 1 hour.")
         return
     signal_usage.setdefault(uid, []).append(datetime.now(timezone.utc))
-    stats["total_signals"] += 1
-    await msg.answer("⌛ Analyzing previous rounds...")
-    time.sleep(1)
-    await msg.answer("📡 Dispatching signal...")
+    await msg.answer("📡 Signal incoming...")
     time.sleep(1)
     await msg.answer(f"📶 Your signal: <b>{generate_signal()}</b>")
-@dp.message(F.text == "📊 Статистика", F.from_user.id.in_(ADMIN_IDS))
-async def stats_panel(msg: Message):
-    await msg.answer(f"📈 Лидов одобрено: {len(approved_users)}\n📶 Выдано сигналов: {stats['total_signals']}")
+# 🌐 Проверочный ручной ping (можно использовать в UptimeRobot)
+async def ping(request):
+    return web.Response(text="OK")
 
-@dp.message(F.text == "✅ Активные лиды", F.from_user.id.in_(ADMIN_IDS))
-async def active_panel(msg: Message):
-    txt = [f"{uid}" for uid in approved_users]
-    await msg.answer("\n".join(txt) if txt else "Нет активных лидов.")
+# 📥 Команда для просмотра заявок (только главный админ)
+@dp.message(F.text == "📥 Заявки на доступ", F.from_user.id == MAIN_ADMIN_ID)
+async def view_requests(msg: Message):
+    if not pending_users:
+        await msg.answer("📭 Нет заявок на доступ.")
+        return
+    txt = [
+        f"🆔 <code>{uid}</code> — @{info['username']} ({info['name']})"
+        for uid, info in pending_users.items()
+    ]
+    await msg.answer("\n".join(txt))
 
-@dp.message(F.text == "⏳ Заявки на доступ", F.from_user.id.in_(ADMIN_IDS))
-async def pending_panel(msg: Message):
-    txt = [f"{uid} @{info['username']}" for uid, info in pending_users.items()]
-    await msg.answer("\n".join(txt) if txt else "Нет заявок на доступ.")
-
-@dp.message(F.text == "➕ Добавить лид", F.from_user.id.in_(ADMIN_IDS))
-async def ask_add(msg: Message):
-    await msg.answer("📩 Отправьте ID пользователя, которому выдать доступ.")
-
-@dp.message(F.text == "🚫 Удалить лид", F.from_user.id.in_(ADMIN_IDS))
-async def ask_remove(msg: Message):
-    await msg.answer("🗑 Отправьте ID пользователя, у которого отобрать доступ.")
-
-@dp.message(F.text == "🆕 Добавить админа", F.from_user.id.in_(ADMIN_IDS))
-async def ask_add_admin(msg: Message):
-    await msg.answer("📩 Отправьте ID пользователя, которому выдать админку.")
-
-@dp.message(F.text == "🗑️ Отобрать админку", F.from_user.id.in_(ADMIN_IDS))
-async def ask_remove_admin(msg: Message):
-    await msg.answer("🗑 Отправьте ID администратора, у которого нужно отобрать админку.")
-
-@dp.message(F.from_user.id.in_(ADMIN_IDS))
-async def process_ids(msg: Message):
-    if msg.text.isdigit():
-        uid = int(msg.text)
-        reply = msg.reply_to_message
-        if reply:
-            text = reply.text.lower()
-            if "выдать доступ" in text:
-                approved_users.add(uid)
-                stats["users"].add(uid)
-                await msg.answer(f"✅ Доступ выдан лиду: <code>{uid}</code>")
-            elif "отобрать доступ" in text:
-                approved_users.discard(uid)
-                await msg.answer(f"🚫 Доступ отобран у лида: <code>{uid}</code>")
-            elif "выдать админку" in text:
-                ADMIN_IDS.add(uid)
-                await msg.answer(f"✅ Админ добавлен: <code>{uid}</code>")
-            elif "отобрать админку" in text:
-                if uid == MAIN_ADMIN_ID:
-                    await msg.answer("⚠ Нельзя удалить главного админа!")
-                elif uid in ADMIN_IDS:
-                    ADMIN_IDS.discard(uid)
-                    await msg.answer(f"🗑 Админ удалён: <code>{uid}</code>")
-                else:
-                    await msg.answer(f"❌ <code>{uid}</code> не является админом.")
-
-# 🌐 Webhook-сервер для Telegram
+# 🌐 Webhook для Telegram
 async def telegram_webhook(request):
     data = await request.json()
     update = Update.to_object(data)
     await dp.feed_update(bot, update)
     return web.Response()
 
+# 🚀 Запуск на Render
 async def on_startup(app):
     webhook_url = "https://aviator-signal-bot-5eqk.onrender.com"
     await bot.delete_webhook()
     await bot.set_webhook(webhook_url)
 
+# 🏁 Запуск aiohttp-приложения
+app = web.Application()
+app.router.add_get("/", ping)
 app.router.add_post("/", telegram_webhook)
 app.on_startup.append(on_startup)
 
